@@ -1,8 +1,11 @@
 from collections import deque
 
+import ale_py
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+
+gym.register_envs(ale_py)
 
 
 class GrayScaleObservation(gym.ObservationWrapper):

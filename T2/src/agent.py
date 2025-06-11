@@ -64,10 +64,10 @@ class Agent:
         transitions = self.memory.sample(self.batch_size)
         batch = Transition(*zip(*transitions))
 
-        state_batch = torch.cat(batch.state)
+        state_batch = torch.stack(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
-        next_state_batch = torch.cat(batch.next_state)
+        next_state_batch = torch.stack(batch.next_state)
         done_batch = torch.cat(batch.done)
 
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
