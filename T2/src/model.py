@@ -6,14 +6,16 @@ class DQN(nn.Module):
     def __init__(self, n_stack_frames: int, n_actions: int):
         super(DQN, self).__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(n_stack_frames, 32, kernel_size=8, stride=4),
+            nn.Conv2d(n_stack_frames, 32, kernel_size=5, stride=2),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.Conv2d(64, 64, kernel_size=3, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3136, 512),
+            # Input: 84x84, Conv1: (84-5)/2+1=40, Conv2: (40-3)/2+1=19, Conv3: (19-3)/1+1=17
+            # Final size: 64 * 17 * 17 = 18496
+            nn.Linear(18496, 512),
             nn.ReLU(),
             nn.Linear(512, n_actions),
         )

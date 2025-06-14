@@ -1,4 +1,4 @@
-# Agente Deep Q-Learning para Atari Pong
+# Agente Deep Q-Learning para Atari Pong - Roberto Martins
 
 ## Relatório Técnico
 

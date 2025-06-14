@@ -1,3 +1,6 @@
+import os
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -10,7 +13,7 @@ from src.wrappers import create_env
 
 ENV_NAME = "ALE/Pong-v5"
 N_STACK_FRAMES = 4
-N_EPISODES = 1
+N_EPISODES = 100
 LR = 1e-4
 GAMMA = 0.99
 EPSILON_START = 1.0
@@ -22,7 +25,14 @@ TARGET_UPDATE_FREQUENCY = 1000
 SHAPE = 84
 
 
-def plot_rewards(rewards):
+def plot_rewards(rewards, filename_prefix: str = "rewards"):
+    """
+    Plot rewards with timestamp to avoid overwriting files.
+
+    Args:
+        rewards: List of rewards to plot
+        filename_prefix: Prefix for the filename (default: "rewards")
+    """
     plt.figure(figsize=(10, 5))
     plt.title("Rewards per Episode")
     plt.xlabel("Episode")
@@ -44,17 +54,27 @@ def plot_rewards(rewards):
 
     plt.legend()
     plt.grid(True)
-    plt.savefig("rewards.png")
-    plt.show()
+
+    # Create plots directory if it doesn't exist
+    plots_dir = "plots"
+    os.makedirs(plots_dir, exist_ok=True)
+
+    # Generate unique filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{plots_dir}/{filename_prefix}_{timestamp}.png"
+    plt.savefig(filename)
+    print(f"Plot saved as: {filename}")
+    plt.close()  # Close the figure to free memory
 
 
-def demonstrate_agent(model_path: str, n_demo_episodes: int = 3):
+def demonstrate_agent(model_path: str, n_demo_episodes: int = 3, save_results: bool = True):
     """
     Load the trained model and demonstrate the agent playing the game.
 
     Args:
         model_path: Path to the saved model weights
         n_demo_episodes: Number of episodes to demonstrate
+        save_results: Whether to save demonstration results to CSV
     """
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Demonstrating trained agent on device: {device}")
@@ -84,6 +104,7 @@ def demonstrate_agent(model_path: str, n_demo_episodes: int = 3):
 
     print(f"\nDemonstrating agent for {n_demo_episodes} episodes...")
     demo_rewards = []
+    episode_data = []  # Store detailed episode information
 
     for episode in range(n_demo_episodes):
         state, _ = env.reset()
@@ -111,6 +132,9 @@ def demonstrate_agent(model_path: str, n_demo_episodes: int = 3):
                 print(f"  Step {step_count}, Current reward: {total_reward}")
 
         demo_rewards.append(total_reward)
+        episode_data.append(
+            {"episode": episode + 1, "steps": step_count, "total_reward": total_reward}
+        )
         print(
             f"  Episode {episode + 1} finished: {step_count} steps, Total reward: {total_reward}"
         )
@@ -127,39 +151,115 @@ def demonstrate_agent(model_path: str, n_demo_episodes: int = 3):
     print(f"Worst episode reward: {np.min(demo_rewards):.2f}")
     print(f"Reward std: {np.std(demo_rewards):.2f}")
 
+    # Save results to CSV if requested
+    if save_results:
+        import csv
+        import os
+
+        # Create results folder
+        results_folder = "demonstration_results"
+        os.makedirs(results_folder, exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_filename = f"{results_folder}/demo_results_{timestamp}.csv"
+
+        # Write episode data to CSV
+        with open(csv_filename, "w", newline="") as csvfile:
+            fieldnames = ["episode", "steps", "total_reward"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(episode_data)
+
+        # Write summary statistics to separate CSV
+        summary_filename = f"{results_folder}/demo_summary_{timestamp}.csv"
+        summary_data = [
+            {"metric": "Episodes played", "value": n_demo_episodes},
+            {"metric": "Average reward", "value": f"{np.mean(demo_rewards):.2f}"},
+            {"metric": "Best episode reward", "value": f"{np.max(demo_rewards):.2f}"},
+            {"metric": "Worst episode reward", "value": f"{np.min(demo_rewards):.2f}"},
+            {"metric": "Reward std", "value": f"{np.std(demo_rewards):.2f}"},
+        ]
+
+        with open(summary_filename, "w", newline="") as csvfile:
+            fieldnames = ["metric", "value"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(summary_data)
+
+        print("\nDemonstration results saved to:")
+        print(f"  Episode details: {csv_filename}")
+        print(f"  Summary statistics: {summary_filename}")
+
     return demo_rewards
 
 
-def create_render_env(env_name: str, shape: int = 84, k: int = 4):
+def create_render_env(
+    env_name: str,
+    shape: int = 84,
+    k: int = 4,
+    record_video: bool = False,
+    video_folder: str = "videos",
+    video_name_prefix: str = "demo",
+):
     """Create environment with rendering enabled for demonstration."""
     import ale_py
     import gymnasium as gym
+    from gymnasium.wrappers import RecordVideo
 
     from src.wrappers import FrameStack, GrayScaleObservation, ResizeObservation
 
     gym.register_envs(ale_py)
 
     # Create environment with human rendering
-    env = gym.make(env_name, render_mode="human")
+    env = gym.make(env_name, render_mode="rgb_array" if record_video else "human")
+
+    # Add video recording wrapper if requested
+    if record_video:
+        # Create unique video name with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_name = f"{video_name_prefix}_{timestamp}"
+        env = RecordVideo(
+            env, video_folder=video_folder, episode_trigger=lambda x: True, name_prefix=video_name
+        )
+
     env = GrayScaleObservation(env)
     env = ResizeObservation(env, shape)
     env = FrameStack(env, k)
     return env
 
 
-def demonstrate_agent_visual(model_path: str, n_demo_episodes: int = 2):
+def demonstrate_agent_visual(model_path: str, n_demo_episodes: int = 5, save_video: bool = True):
     """
     Load the trained model and demonstrate the agent playing with visual rendering.
 
     Args:
         model_path: Path to the saved model weights
         n_demo_episodes: Number of episodes to demonstrate with rendering
+        save_video: Whether to save video recordings of the episodes
     """
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Demonstrating trained agent visually on device: {device}")
 
+    # Create video folder if saving videos
+    video_folder = "demonstration_videos"
+    if save_video:
+        import os
+
+        os.makedirs(video_folder, exist_ok=True)
+        print(f"Videos will be saved to: {video_folder}/")
+
     # Create environment with visual rendering
-    env = create_render_env(ENV_NAME, SHAPE, N_STACK_FRAMES)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    video_prefix = f"visual_demo_{timestamp}"
+    env = create_render_env(
+        ENV_NAME,
+        SHAPE,
+        N_STACK_FRAMES,
+        record_video=save_video,
+        video_folder=video_folder,
+        video_name_prefix=video_prefix,
+    )
     n_actions = env.action_space.n
 
     # Create agent and load trained weights
@@ -224,6 +324,12 @@ def demonstrate_agent_visual(model_path: str, n_demo_episodes: int = 2):
     finally:
         env.close()
 
+    # Print video saving information
+    if save_video:
+        print(f"\nVideos saved to: {video_folder}/")
+        print(f"Video files use prefix: {video_prefix}")
+        print("You can find the recorded episodes as MP4 files in the videos folder.")
+
     return demo_rewards
 
 
@@ -277,17 +383,20 @@ def main():
             agent.train_step()
 
         episode_rewards.append(total_reward)
+        print(f"Episode {episode + 1} reward: {total_reward}")
 
     env.close()
 
     # Plot training results
-    plot_rewards(episode_rewards)
+    plot_rewards(episode_rewards, "training_rewards")
 
     # Save the trained model
+    model_dir = "model"
+    os.makedirs(model_dir, exist_ok=True)
     clean_env_name = ENV_NAME.replace("/", "_")
-    model_path = f"{clean_env_name}_dqn_model.pth"
+    model_path = f"{model_dir}/{clean_env_name}_dqn_model.pth"
     torch.save(agent.policy_net.state_dict(), model_path)
-    print("Training complete. Model saved.")
+    print(f"Training complete. Model saved to: {model_path}")
 
     # Demonstrate the trained agent
     print("\n" + "=" * 60)
@@ -295,15 +404,15 @@ def main():
     print("=" * 60)
 
     # Non-visual demonstration (faster, with statistics)
-    demo_rewards = demonstrate_agent(model_path, n_demo_episodes=5)
+    demo_rewards = demonstrate_agent(model_path, n_demo_episodes=2)
     visual_rewards = demonstrate_agent_visual(model_path, n_demo_episodes=2)
     print(
         f"\nAll done! Check '{model_path}' for the trained model and "
-        "'rewards.png' for training curves."
+        "timestamped reward plots for training curves."
     )
 
-    plot_rewards(demo_rewards)
-    plot_rewards(visual_rewards)
+    plot_rewards(demo_rewards, "demonstration_rewards")
+    plot_rewards(visual_rewards, "visual_demonstration_rewards")
 
 
 if __name__ == "__main__":
